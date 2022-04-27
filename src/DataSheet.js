@@ -276,11 +276,11 @@ export default class DataSheet extends PureComponent {
 
   handleKeyboardCellMovement(e, commit = false) {
     const { start, editing } = this.getState();
-    const { data } = this.props;
+    const { data, isSelectingWhileEditing } = this.props;
     const isEditing = editing && !isEmpty(editing);
     const currentCell = data[start.i] && data[start.i][start.j];
 
-    if (isEditing && !commit) {
+    if (isEditing && !isSelectingWhileEditing && !commit) {
       return false;
     }
     const hasComponent = currentCell && currentCell.component;
@@ -313,6 +313,7 @@ export default class DataSheet extends PureComponent {
     }
     const keyCode = e.which || e.keyCode;
     const { start, end, editing } = this.getState();
+    const { isSelectingWhileEditing } = this.props;
     const isEditing = editing && !isEmpty(editing);
     const noCellsSelected = !start || isEmpty(start);
     const ctrlKeyPressed = e.ctrlKey || e.metaKey;
@@ -334,12 +335,18 @@ export default class DataSheet extends PureComponent {
       return true;
     }
 
-    if (!isEditing) {
+    if (!isEditing || isSelectingWhileEditing) {
       this.handleKeyboardCellMovement(e);
       if (deleteKeysPressed) {
         e.preventDefault();
         this.clearSelectedCells(start, end);
       } else if (currentCell && !currentCell.readOnly) {
+        if (isSelectingWhileEditing) {
+          // Do nothing if other cell is being edited.
+          // The next branches are needed to start edit mode one way or another,
+          // and we don't need it if we are currently refernecing to other cells
+          return;
+        }
         if (enterKeyPressed) {
           this._setState({ editing: start, clear: {}, forceEdit: true });
           e.preventDefault();
@@ -390,25 +397,28 @@ export default class DataSheet extends PureComponent {
   }
 
   updateLocationSingleCell(location) {
+    const { isSelectingWhileEditing } = this.props;
+    const editing = isSelectingWhileEditing ? this.state.editing : {};
     this._setState({
       start: location,
       end: location,
-      editing: {},
+      editing,
     });
   }
 
   updateLocationMultipleCells(offsets) {
     const { start, end } = this.getState();
-    const { data } = this.props;
+    const { data, isSelectingWhileEditing } = this.props;
     const oldStartLocation = { i: start.i, j: start.j };
     const newEndLocation = {
       i: end.i + offsets.i,
       j: Math.min(data[0].length - 1, Math.max(0, end.j + offsets.j)),
     };
+    const editing = isSelectingWhileEditing ? this.state.editing : {};
     this._setState({
       start: oldStartLocation,
       end: newEndLocation,
-      editing: {},
+      editing,
     });
   }
 
@@ -506,7 +516,7 @@ export default class DataSheet extends PureComponent {
       return;
     }
     const { editing } = this.state;
-    const { data } = this.props;
+    const { data, isSelectingWhileEditing } = this.props;
     const isEditing = !isEmpty(editing);
     if (isEditing) {
       const currentCell = data[editing.i][editing.j];
@@ -525,6 +535,27 @@ export default class DataSheet extends PureComponent {
           this.dgDom && this.dgDom.focus({ preventScroll: true });
         }, 1);
       }
+      if (isSelectingWhileEditing) {
+        e.preventDefault();
+        let func = () => {};
+        if (keyCode === ESCAPE_KEY) {
+          func = () => {
+            this.onRevert();
+            this.props.onSelectWhileEditingAbort &&
+              this.props.onSelectWhileEditingAbort();
+          };
+        } else if (keyCode === ENTER_KEY) {
+          func = () => {
+            this.props.onSelectWhileEditingComplete &&
+              this.props.onSelectWhileEditingComplete();
+          };
+        }
+        setTimeout(() => {
+          this.dgDom && this.dgDom.focus({ preventScroll: true });
+          this.setState(() => ({ editing: {} }));
+          func();
+        }, 1);
+      }
     }
   }
 
@@ -537,7 +568,7 @@ export default class DataSheet extends PureComponent {
 
   onDoubleClick(i, j) {
     let cell = this.props.data[i][j];
-    if (!cell.readOnly) {
+    if (!cell.readOnly && !this.props.isSelectingWhileEditing) {
       this._setState({ editing: { i: i, j: j }, forceEdit: true, clear: {} });
     }
   }
@@ -547,20 +578,42 @@ export default class DataSheet extends PureComponent {
       !isEmpty(this.state.editing) &&
       this.state.editing.i === i &&
       this.state.editing.j === j;
-    let editing =
-      isEmpty(this.state.editing) ||
-      this.state.editing.i !== i ||
-      this.state.editing.j !== j
+    const isNowEditingOtherCell =
+      !isEmpty(this.state.editing) &&
+      (this.state.editing.i !== i || this.state.editing.j !== j);
+    const editing =
+      (isEmpty(this.state.editing) ||
+        this.state.editing.i !== i ||
+        this.state.editing.j !== j) &&
+      !this.props.canSelectWhileEditing
         ? {}
         : this.state.editing;
 
-    this._setState({
-      selecting: !isNowEditingSameCell,
-      start: e.shiftKey ? this.getState().start : { i, j },
-      end: { i, j },
-      editing: editing,
-      forceEdit: !!isNowEditingSameCell,
-    });
+    if (this.props.isSelectingWhileEditing && isNowEditingSameCell) {
+      // stop editing and selection if we click on cell that initiated cell selection
+      this._setState({
+        selecting: false,
+        start: { i, j },
+        end: { i, j },
+        editing: {},
+        forceEdit: false,
+      });
+      this.props.onSelectWhileEditingAbort &&
+        this.props.onSelectWhileEditingAbort();
+    } else {
+      this._setState({
+        selecting: !isNowEditingSameCell,
+        start: e.shiftKey ? this.getState().start : { i, j },
+        end: { i, j },
+        editing: editing,
+        forceEdit: !!isNowEditingSameCell,
+      });
+
+      if (isNowEditingOtherCell && this.props.canSelectWhileEditing) {
+        this.props.onSelectWhileEditingStart &&
+          this.props.onSelectWhileEditingStart();
+      }
+    }
 
     var ua = window.navigator.userAgent;
     var isIE = /MSIE|Trident/.test(ua);
@@ -743,6 +796,11 @@ DataSheet.propTypes = {
   keyFn: PropTypes.func,
   handleCopy: PropTypes.func,
   editModeChanged: PropTypes.func,
+  canSelectWhileEditing: PropTypes.bool,
+  isSelectingWhileEditing: PropTypes.bool,
+  onSelectWhileEditingStart: PropTypes.func,
+  onSelectWhileEditingComplete: PropTypes.func,
+  onSelectWhileEditingAbort: PropTypes.func,
 };
 
 DataSheet.defaultProps = {
@@ -751,4 +809,6 @@ DataSheet.defaultProps = {
   cellRenderer: Cell,
   valueViewer: ValueViewer,
   dataEditor: DataEditor,
+  canSelectWhileEditing: false,
+  isSelectingWhileEditing: false,
 };
