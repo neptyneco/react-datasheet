@@ -601,17 +601,32 @@ export default class DataSheet extends PureComponent {
       this.props.onSelectWhileEditingAbort &&
         this.props.onSelectWhileEditingAbort();
     } else {
-      this._setState({
-        selecting: !isNowEditingSameCell,
-        start: e.shiftKey ? this.getState().start : { i, j },
-        end: { i, j },
-        editing: editing,
-        forceEdit: !!isNowEditingSameCell,
-      });
-
       if (isNowEditingOtherCell && this.props.canSelectWhileEditing) {
+        // we need to run two separate callbacks for upper component:
+        // onSelectWhileEditingStart and onSelect. Both of them update state and it causes
+        // conflicts between them.
+        // The only solution that worked is wrapping the second callback in setTimeout.
+
         this.props.onSelectWhileEditingStart &&
           this.props.onSelectWhileEditingStart();
+
+        setTimeout(() => {
+          this._setState({
+            selecting: !isNowEditingSameCell,
+            start: e.shiftKey ? this.getState().start : { i, j },
+            end: { i, j },
+            editing: editing,
+            forceEdit: !!isNowEditingSameCell,
+          });
+        }, 0);
+      } else {
+        this._setState({
+          selecting: !isNowEditingSameCell,
+          start: e.shiftKey ? this.getState().start : { i, j },
+          end: { i, j },
+          editing: editing,
+          forceEdit: !!isNowEditingSameCell,
+        });
       }
     }
 
