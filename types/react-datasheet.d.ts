@@ -85,6 +85,16 @@ declare namespace ReactDataSheet {
         isCellNavigable?: (cell: T, row: number, col: number, jumpNext: boolean) => boolean;
         /** Optional: Is called when datasheet changes edit mode. */
         editModeChanged?: (inEditMode: boolean) => void;
+        /** Determines if user can perform a selection without losing focus of edited cell. */
+        canSelectWhileEditing?: boolean;
+        /** Determines if user is performing a selection without losing focus of edited cell. */
+        isSelectingWhileEditing?: boolean;
+
+        onSelectWhileEditingStart?: () => void;
+
+        onSelectWhileEditingComplete?: () => void;
+
+        onSelectWhileEditingAbort?: () => void;
     }
 
     /** A function to process the raw clipboard data. It should return an array of arrays of strings. This is useful for when the clipboard may have data with irregular field or line delimiters. If not set, rows will be split with line breaks and cells with tabs. To wire it up pass your function to the parsePaste property of the ReactDataSheet component. */
@@ -250,11 +260,16 @@ declare namespace ReactDataSheet {
         forceEdit?: boolean;
         editing?: CellReference;
         clear?: CellReference;
+        dragging?: boolean;
     }
 }
 
 declare class ReactDataSheet<T extends ReactDataSheet.Cell<T, V>, V = string> extends Component<ReactDataSheet.DataSheetProps<T, V>, ReactDataSheet.DataSheetState> {
-        getSelectedCells: (data: T[][], start: ReactDataSheet.CellReference, end: ReactDataSheet.CellReference) => {cell: T, row: number, col: number}[];
+    getSelectedCells: (data: T[][], start: ReactDataSheet.CellReference, end: ReactDataSheet.CellReference) => {cell: T, row: number, col: number}[];
+    onMouseOver(i: number, j: number): void;
+    handleCut(e: ClipboardEvent): void;
+    handleCopy(e: ClipboardEvent): void;
+    handlePaste(e: ClipboardEvent): void;
 }
 
 export default ReactDataSheet;
