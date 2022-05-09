@@ -165,7 +165,7 @@ export default class DataCell extends PureComponent {
           cell={cell}
           row={row}
           col={col}
-          value={this.state.value || initialData(this.props)}
+          value={this.state.value}
           onChange={this.handleChange}
           onCommit={this.handleCommit}
           onRevert={this.handleRevert}
